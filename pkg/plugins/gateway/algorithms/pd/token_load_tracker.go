@@ -558,6 +558,22 @@ func (t *TokenLoadTracker) releaseDecode(requestID string, entry *decodeLoadEntr
 	klog.V(4).InfoS("token_load_decode_released", "request_id", requestID, "pod", entry.podKey, "cost", entry.cost)
 }
 
+// DecodeLoadWithGrowth (EXPERIMENT) is the decode ledger of podKey plus the
+// output each outstanding request has generated so far, estimated as
+// ratePerRequest tokens per second since it was charged.
+func (t *TokenLoadTracker) DecodeLoadWithGrowth(podKey string, ratePerRequest float64) float64 {
+	now := t.now()
+	total := 0.0
+	t.decodeEntries.Range(func(_, v any) bool {
+		e := v.(*decodeLoadEntry)
+		if e.podKey == podKey && !e.released.Load() {
+			total += e.cost + ratePerRequest*now.Sub(e.acquiredAt).Seconds()
+		}
+		return true
+	})
+	return total
+}
+
 // GetDecodeLoad returns the decode counter of the pod identified by podKey:
 // the charged prompt tokens of the requests routed to it that have not
 // completed. Unknown pods report 0.

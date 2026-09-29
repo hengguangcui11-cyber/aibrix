@@ -453,6 +453,12 @@ func (r *pdRouter) chargeTokenLoad(routingCtx *types.RoutingContext, pod *v1.Pod
 	r.tokenLoadTracker.AcquirePrefillWithTTL(routingCtx.RequestID, podKey, cost, overrides.TokenLoad.TTL)
 }
 
+// decodeTokenLoadGrowthRate (EXPERIMENT) is the estimated decode rate of one
+// request, in tokens per second. When positive, the token_load decode score adds
+// rate x elapsed time for every outstanding request on the pod, an estimate of
+// the output it has generated so far. 0 keeps the merged behavior.
+var decodeTokenLoadGrowthRate = utils.LoadEnvFloat("AIBRIX_DECODE_TOKEN_LOAD_GROWTH_RATE", 0)
+
 // chargeDecodeTokenLoad charges the request's prompt to the decode pod when the
 // request is scored by the token_load decode policy. The decode pod receives
 // the whole prompt's KV from the prefill pod, so the charge is the full prompt,
@@ -1228,6 +1234,9 @@ func (r *pdRouter) scoreDecodePods(routingCtx *types.RoutingContext, filteredDec
 		}
 		if usesDecodeTokenLoad && r.tokenLoadTracker != nil {
 			in.DecodeTokens = r.tokenLoadTracker.GetDecodeLoad(utils.GeneratePodKey(pod.Namespace, pod.Name))
+			if decodeTokenLoadGrowthRate > 0 {
+				in.DecodeTokens = r.tokenLoadTracker.DecodeLoadWithGrowth(utils.GeneratePodKey(pod.Namespace, pod.Name), decodeTokenLoadGrowthRate)
+			}
 		}
 
 		decodeScore := policy.ScoreDecodePod(routingCtx, pod, in)
